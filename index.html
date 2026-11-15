@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel de Estoque — front-end da API de Estoque</title>
+<meta name="description" content="Painel web para a API de Estoque: cadastro, edição, ajuste de estoque e resumo, feito com HTML, CSS e JavaScript.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">10</span>
+    <div><strong>PAINEL DE ESTOQUE</strong><small>front-end da API de Estoque</small></div>
+  </div>
+  <div class="conn">
+    <span class="pill" id="status" role="status"><i class="dot"></i><span id="status-text">Conectando…</span></span>
+    <button class="btn ghost" id="btn-config" type="button">Configurar API</button>
+  </div>
+</header>
+
+<div class="banner" id="banner" hidden>
+  <span>API offline ou não encontrada: você está no <b>modo demonstração</b>, com dados de exemplo guardados só no seu navegador.</span>
+  <button class="btn ghost small" id="btn-retry" type="button">Tentar conectar de novo</button>
+</div>
+
+<main>
+  <section class="summary" aria-label="Resumo do estoque">
+    <article class="card"><span class="mono">Produtos</span><strong id="sum-total">—</strong></article>
+    <article class="card"><span class="mono">Itens em estoque</span><strong id="sum-itens">—</strong></article>
+    <article class="card"><span class="mono">Valor em estoque</span><strong id="sum-valor">—</strong></article>
+    <article class="card warn"><span class="mono">Estoque baixo</span><strong id="sum-baixo">—</strong></article>
+  </section>
+
+  <section class="toolbar" aria-label="Filtros">
+    <label class="field grow"><span class="mono">Buscar</span><input id="f-busca" type="search" placeholder="Nome do produto…" autocomplete="off"></label>
+    <label class="field"><span class="mono">Categoria</span><select id="f-categoria"><option value="">Todas</option></select></label>
+    <label class="check"><input id="f-baixo" type="checkbox"><span>Só estoque baixo (5 ou menos)</span></label>
+    <button class="btn primary" id="btn-novo" type="button">+ Novo produto</button>
+  </section>
+
+  <section class="table-wrap">
+    <table id="tabela">
+      <thead><tr><th>ID</th><th>Produto</th><th>Categoria</th><th class="num">Preço</th><th class="num">Estoque</th><th class="actions">Ações</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </section>
+
+  <nav class="pager" aria-label="Paginação">
+    <button class="btn ghost small" id="btn-prev" type="button">← Anterior</button>
+    <span class="mono" id="page-info">Página 1</span>
+    <button class="btn ghost small" id="btn-next" type="button">Próxima →</button>
+  </nav>
+</main>
+
+<footer class="foot mono">Feito por Thiago Matosinhos · <a href="https://github.com/thiagomartinsmdev/estoque-api" rel="noopener">API de Estoque</a></footer>
+
+<dialog id="dlg-produto" aria-labelledby="dlg-produto-titulo">
+  <form id="form-produto" novalidate>
+    <h2 id="dlg-produto-titulo">Novo produto</h2>
+    <input type="hidden" id="p-id">
+    <label class="field"><span class="mono">Nome</span><input id="p-nome" type="text" maxlength="120" required></label>
+    <label class="field"><span class="mono">Categoria</span><input id="p-categoria" type="text" maxlength="60" list="lista-categorias" placeholder="geral"></label>
+    <datalist id="lista-categorias"></datalist>
+    <div class="row2">
+      <label class="field"><span class="mono">Preço (R$)</span><input id="p-preco" type="text" inputmode="decimal" placeholder="79,90" required></label>
+      <label class="field"><span class="mono">Quantidade</span><input id="p-qtd" type="number" min="0" step="1" value="0" required></label>
+    </div>
+    <p class="form-error" id="erro-produto" role="alert" hidden></p>
+    <div class="dlg-actions"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">Salvar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-estoque" aria-labelledby="dlg-estoque-titulo">
+  <form id="form-estoque" novalidate>
+    <h2 id="dlg-estoque-titulo">Ajustar estoque</h2>
+    <p class="muted" id="estoque-info"></p>
+    <label class="field"><span class="mono">Quantidade (positivo = entrada, negativo = saída)</span><input id="e-qtd" type="number" step="1" placeholder="Ex.: 5 ou -2" required></label>
+    <p class="form-error" id="erro-estoque" role="alert" hidden></p>
+    <div class="dlg-actions"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn primary" type="submit">Aplicar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-apagar" aria-labelledby="dlg-apagar-titulo">
+  <form id="form-apagar" novalidate>
+    <h2 id="dlg-apagar-titulo">Apagar produto?</h2>
+    <p class="muted" id="apagar-info"></p>
+    <div class="dlg-actions"><button class="btn ghost" type="button" data-close>Cancelar</button><button class="btn danger" type="submit">Apagar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-config" aria-labelledby="dlg-config-titulo">
+  <form id="form-config" novalidate>
+    <h2 id="dlg-config-titulo">Configurar API</h2>
+    <label class="field"><span class="mono">Endereço da API</span><input id="c-url" type="url" placeholder="http://127.0.0.1:8000"></label>
+    <p class="muted">Ligue a API com <code>uvicorn app.main:app --reload</code> e use o endereço acima. Sem API, o painel funciona em modo demonstração.</p>
+    <div class="dlg-actions">
+      <button class="btn ghost" type="button" data-close>Cancelar</button>
+      <button class="btn ghost" type="button" id="c-demo">Usar modo demo</button>
+      <button class="btn primary" type="submit">Salvar e conectar</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+<script src="js/app.js" defer></script>
+</body>
+</html>
