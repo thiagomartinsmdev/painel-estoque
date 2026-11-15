@@ -2,6 +2,8 @@
 
 Painel web para a [API de Estoque](https://github.com/thiagomartinsmdev/estoque-api): cadastre, edite, apague e ajuste o estoque dos produtos, com resumo e alertas de estoque baixo. Feito com **HTML, CSS e JavaScript puro**, sem bibliotecas.
 
+![Painel de Estoque](docs/painel.png)
+
 ## Funcionalidades
 
 - Resumo do estoque: total de produtos, itens, valor em estoque e alertas
