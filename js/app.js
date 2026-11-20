@@ -405,12 +405,83 @@
   }
 
   // A API devolve no máximo 200 produtos por vez: busca de 200 em 200 até acabar.
-  async function listarTodos() {
+  // Sem filtros, traz todos os produtos; com filtros, só os que combinam.
+  async function listarTodos(filtros = {}) {
+    const { busca = '', categoria = '', baixo = false } = filtros;
     const todos = [];
     for (let skip = 0; ; skip += 200) {
-      const parte = await api.listar({ busca: '', categoria: '', baixo: false, skip, limit: 200 });
+      const parte = await api.listar({ busca, categoria, baixo, skip, limit: 200 });
       todos.push(...parte);
       if (parte.length < 200) return todos;
+    }
+  }
+
+  /* ---------- Exportar para CSV ---------- */
+  // Formato pensado para o Excel em português: separador ";" e vírgula nos decimais.
+  const SEP = ';';
+  const decimal = (n) => Number(n).toFixed(2).replace('.', ',');
+
+  // Prepara um valor para ir numa célula do CSV.
+  function celulaCsv(valor) {
+    let t = String(valor ?? '');
+    // Proteção: textos que começam com = + - @ podem virar fórmula no Excel.
+    if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+    // Se tiver separador, aspas ou quebra de linha, coloca entre aspas (e dobra as aspas).
+    if (/[";\r\n]/.test(t)) t = `"${t.replace(/"/g, '""')}"`;
+    return t;
+  }
+
+  function montarCsv(produtos) {
+    const cabecalho = ['ID', 'Produto', 'Categoria', 'Preço (R$)', 'Quantidade', 'Valor em estoque (R$)', 'Estoque baixo'];
+    const linhas = produtos.map((p) => [
+      p.id,
+      p.nome,
+      p.categoria,
+      decimal(p.preco),
+      p.quantidade,
+      decimal(Number(p.preco) * p.quantidade),
+      p.quantidade <= LOW ? 'Sim' : 'Não',
+    ]);
+    return [cabecalho, ...linhas].map((l) => l.map(celulaCsv).join(SEP)).join('\r\n') + '\r\n';
+  }
+
+  // Faz o navegador baixar um texto como arquivo.
+  function baixarArquivo(nome, conteudo, tipo) {
+    // O BOM (\uFEFF) avisa o Excel que o arquivo é UTF-8, para os acentos aparecerem certos.
+    const blob = new Blob(['\uFEFF', conteudo], { type: tipo });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function dataDeHoje() {
+    const d = new Date();
+    const dois = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${dois(d.getMonth() + 1)}-${dois(d.getDate())}`;
+  }
+
+  // Exporta os produtos que combinam com a busca e os filtros atuais (todas as páginas).
+  async function exportarCsv() {
+    if (!usuario) return;
+    const btn = $('#btn-csv');
+    btn.disabled = true;
+    try {
+      const produtos = await listarTodos({ busca: st.busca, categoria: st.categoria, baixo: st.baixo });
+      if (produtos.length === 0) {
+        toast('Nenhum produto para exportar com esses filtros.', 'err');
+        return;
+      }
+      baixarArquivo(`estoque-${dataDeHoje()}.csv`, montarCsv(produtos), 'text/csv;charset=utf-8');
+      toast(`CSV exportado: ${produtos.length} ${produtos.length === 1 ? 'produto' : 'produtos'}.`);
+    } catch (e) {
+      if (e.status !== 401) toast(e.message, 'err');
+    } finally {
+      btn.disabled = false;
     }
   }
 
@@ -653,6 +724,7 @@
   $('#btn-prev').addEventListener('click', () => { if (st.page > 0) { st.page -= 1; refresh(); } });
   $('#btn-next').addEventListener('click', () => { if (hasNext) { st.page += 1; refresh(); } });
   $('#btn-novo').addEventListener('click', () => abrirProduto(null));
+  $('#btn-csv').addEventListener('click', exportarCsv);
   $('#btn-config').addEventListener('click', abrirConfig);
   $('#btn-retry').addEventListener('click', () => { localStorage.removeItem(KEY_FORCE_DEMO); reconectar(); });
   $('#btn-sair').addEventListener('click', sair);
