@@ -8,6 +8,7 @@ Painel web para a [API de Estoque](https://github.com/thiagomartinsmdev/estoque-
 
 - **Login com e-mail e senha** (token JWT da API), com criação do primeiro usuário pelo próprio painel
 - Resumo do estoque: total de produtos, itens, valor em estoque e alertas
+- **Gráfico de estoque por categoria**: barras com o total de itens ou o valor em estoque (R$) de cada categoria
 - Lista de produtos com busca por nome, filtro por categoria, filtro de estoque baixo e paginação
 - Cadastro e edição de produtos, com validação dos campos
 - Entrada e saída de estoque (a API bloqueia estoque negativo e o painel mostra o motivo)
@@ -66,6 +67,18 @@ O painel só mostra o estoque depois do login.
 
 Para cadastrar outras pessoas, use `POST /auth/registro` no `/docs` da API já logado (botão **Authorize**).
 
+## Gráfico de estoque por categoria
+
+Logo abaixo do resumo, o painel mostra um gráfico de barras com **todas as categorias**:
+
+- Botão **Itens**: quantas unidades existem em cada categoria.
+- Botão **Valor (R$)**: quanto vale o estoque de cada categoria (preço × quantidade).
+- Passe o mouse em uma barra (ou use **Tab** no teclado) para ver os detalhes: número de produtos, itens e valor.
+- As categorias aparecem da maior para a menor, e o gráfico se atualiza sozinho quando você cadastra, edita, apaga ou ajusta o estoque.
+- O gráfico considera todos os produtos, sem os filtros da tabela. Como a API entrega no máximo 200 produtos por vez, o painel busca de 200 em 200 até pegar todos.
+
+Feito sem bibliotecas: as barras são elementos HTML com largura proporcional ao valor (CSS), e o texto é colocado com `textContent`.
+
 ## Modo demonstração
 
 Se a API não for encontrada, aparece o aviso amarelo e o painel passa a usar dados de exemplo salvos no `localStorage` do navegador. Nada é enviado para a internet. Clique em **Tentar conectar de novo** quando a API estiver ligada.
@@ -89,7 +102,7 @@ js/app.js        # lógica: login, API, modo demo, tabela, formulários
 ## Próximos passos
 
 - [x] Login (JWT na API)
-- [ ] Gráfico de estoque por categoria
+- [x] Gráfico de estoque por categoria
 - [ ] Exportar a lista para CSV
 
 ---
