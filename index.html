@@ -39,6 +39,22 @@
     <article class="card warn"><span class="mono">Estoque baixo</span><strong id="sum-baixo">—</strong></article>
   </section>
 
+  <section class="chart" aria-labelledby="chart-titulo">
+    <div class="chart-head">
+      <div>
+        <h2 class="chart-title" id="chart-titulo">Estoque por categoria</h2>
+        <p class="muted chart-sub" id="chart-sub">Total de itens em estoque em cada categoria (todos os produtos).</p>
+      </div>
+      <div class="seg" role="group" aria-label="O que o gráfico mostra">
+        <button class="seg-btn" type="button" data-medida="itens" aria-pressed="true">Itens</button>
+        <button class="seg-btn" type="button" data-medida="valor" aria-pressed="false">Valor (R$)</button>
+      </div>
+    </div>
+    <ul class="bars" id="grafico" aria-describedby="chart-sub"></ul>
+    <p class="muted chart-empty" id="grafico-vazio" hidden>Nenhum produto cadastrado ainda.</p>
+    <div class="chart-tip" id="chart-tip" role="tooltip" hidden></div>
+  </section>
+
   <section class="toolbar" aria-label="Filtros">
     <label class="field grow"><span class="mono">Buscar</span><input id="f-busca" type="search" placeholder="Nome do produto…" autocomplete="off"></label>
     <label class="field"><span class="mono">Categoria</span><select id="f-categoria"><option value="">Todas</option></select></label>

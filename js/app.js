@@ -187,6 +187,8 @@
   let usuario = null;        // usuário logado (ou null)
   let hasNext = false;
   const st = { page: 0, busca: '', categoria: '', baixo: false };
+  let medida = 'itens';      // o que o gráfico mostra: 'itens' ou 'valor'
+  let todosProdutos = [];    // todos os produtos (sem filtro), usados no gráfico
 
   function toast(texto, tipo = 'ok') {
     const t = document.createElement('div');
@@ -223,6 +225,8 @@
     $('#btn-prev').disabled = true;
     $('#btn-next').disabled = true;
     st.page = 0;
+    todosProdutos = [];
+    desenharGrafico();
   }
 
   function limparSessao() {
@@ -379,12 +383,14 @@
       const [lista, resumo, todos] = await Promise.all([
         api.listar({ busca: st.busca, categoria: st.categoria, baixo: st.baixo, skip: st.page * PAGE, limit: PAGE + 1 }),
         api.resumo(),
-        api.listar({ busca: '', categoria: '', baixo: false, skip: 0, limit: 200 }),
+        listarTodos(),
       ]);
       if (lista.length === 0 && st.page > 0) { st.page -= 1; return refresh(); }
       hasNext = lista.length > PAGE;
       desenharResumo(resumo);
       desenharCategorias(todos);
+      todosProdutos = todos;
+      desenharGrafico();
       desenharTabela(lista.slice(0, PAGE));
       $('#page-info').textContent = `Página ${st.page + 1}`;
       $('#btn-prev').disabled = st.page === 0;
@@ -397,6 +403,97 @@
       if (!api.demo) setStatus('off', 'API sem resposta');
     }
   }
+
+  // A API devolve no máximo 200 produtos por vez: busca de 200 em 200 até acabar.
+  async function listarTodos() {
+    const todos = [];
+    for (let skip = 0; ; skip += 200) {
+      const parte = await api.listar({ busca: '', categoria: '', baixo: false, skip, limit: 200 });
+      todos.push(...parte);
+      if (parte.length < 200) return todos;
+    }
+  }
+
+  /* ---------- Gráfico de estoque por categoria ---------- */
+  const fmtItens = (n) => `${n.toLocaleString('pt-BR')} ${n === 1 ? 'item' : 'itens'}`;
+
+  // Soma itens e valor (preço × quantidade) de cada categoria.
+  function agruparPorCategoria(produtos) {
+    const mapa = new Map();
+    produtos.forEach((p) => {
+      const c = mapa.get(p.categoria) || { categoria: p.categoria, produtos: 0, itens: 0, valor: 0 };
+      c.produtos += 1;
+      c.itens += p.quantidade;
+      c.valor += Number(p.preco) * p.quantidade;
+      mapa.set(p.categoria, c);
+    });
+    return [...mapa.values()];
+  }
+
+  function desenharGrafico() {
+    const lista = $('#grafico');
+    const grupos = agruparPorCategoria(todosProdutos)
+      .sort((a, b) => b[medida] - a[medida] || a.categoria.localeCompare(b.categoria, 'pt-BR'));
+    const maior = Math.max(0, ...grupos.map((g) => g[medida]));
+    $('#chart-sub').textContent = medida === 'itens'
+      ? 'Total de itens em estoque em cada categoria (todos os produtos).'
+      : 'Valor em estoque (preço × quantidade) em cada categoria (todos os produtos).';
+    // "Nenhum produto" só faz sentido para quem está logado.
+    $('#grafico-vazio').hidden = grupos.length > 0 || !usuario;
+    esconderDica();
+    lista.replaceChildren(...grupos.map((g) => {
+      const li = document.createElement('li');
+      li.className = 'bar-row';
+      li.tabIndex = 0;   // permite chegar na barra pelo teclado (Tab)
+      const textoValor = medida === 'itens' ? fmtItens(g.itens) : brl.format(g.valor);
+      li.setAttribute('aria-label', `${g.categoria}: ${textoValor}`);
+
+      const nome = document.createElement('span');
+      nome.className = 'bar-label';
+      nome.textContent = g.categoria;
+
+      const trilho = document.createElement('span');
+      trilho.className = 'bar-track';
+      trilho.setAttribute('aria-hidden', 'true');
+      const barra = document.createElement('span');
+      barra.className = 'bar-fill';
+      barra.style.width = `${maior > 0 ? (g[medida] / maior) * 100 : 0}%`;
+      trilho.appendChild(barra);
+
+      const valor = document.createElement('span');
+      valor.className = 'bar-value';
+      valor.textContent = textoValor;
+
+      li.append(nome, trilho, valor);
+      li.addEventListener('mouseenter', () => mostrarDica(li, g));
+      li.addEventListener('focus', () => mostrarDica(li, g));
+      li.addEventListener('mouseleave', esconderDica);
+      li.addEventListener('blur', esconderDica);
+      return li;
+    }));
+  }
+
+  // Dica (tooltip) com os detalhes da categoria, ao passar o mouse ou focar.
+  function mostrarDica(li, g) {
+    const dica = $('#chart-tip');
+    const titulo = document.createElement('b');
+    titulo.textContent = g.categoria;
+    const linhas = [
+      `${g.produtos} ${g.produtos === 1 ? 'produto' : 'produtos'}`,
+      fmtItens(g.itens),
+      `${brl.format(g.valor)} em estoque`,
+    ].map((t) => { const d = document.createElement('div'); d.textContent = t; return d; });
+    dica.replaceChildren(titulo, ...linhas);
+    dica.hidden = false;
+    const caixa = $('.chart').getBoundingClientRect();
+    const trilho = li.querySelector('.bar-track').getBoundingClientRect();
+    const linha = li.getBoundingClientRect();
+    const esquerda = Math.min(trilho.left - caixa.left, caixa.width - dica.offsetWidth - 8);
+    dica.style.left = `${Math.max(8, esquerda)}px`;
+    dica.style.top = `${linha.bottom - caixa.top + 4}px`;
+  }
+
+  function esconderDica() { $('#chart-tip').hidden = true; }
 
   function desenharResumo(r) {
     $('#sum-total').textContent = r.total_produtos;
@@ -559,6 +656,11 @@
   $('#btn-config').addEventListener('click', abrirConfig);
   $('#btn-retry').addEventListener('click', () => { localStorage.removeItem(KEY_FORCE_DEMO); reconectar(); });
   $('#btn-sair').addEventListener('click', sair);
+  document.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => {
+    medida = b.dataset.medida;
+    document.querySelectorAll('.seg-btn').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    desenharGrafico();
+  }));
   $('#form-produto').addEventListener('submit', salvarProduto);
   $('#form-estoque').addEventListener('submit', aplicarEstoque);
   $('#form-apagar').addEventListener('submit', confirmarApagar);
