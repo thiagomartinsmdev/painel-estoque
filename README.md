@@ -89,7 +89,7 @@ js/app.js        # lógica: login, API, modo demo, tabela, formulários
 ## Próximos passos
 
 - [x] Login (JWT na API)
-- [ ] Gráfico de estoque por categoria
+- [x] Gráfico de estoque por categoria
 - [ ] Exportar a lista para CSV
 
 ---
