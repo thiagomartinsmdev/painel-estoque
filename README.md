@@ -6,6 +6,7 @@ Painel web para a [API de Estoque](https://github.com/thiagomartinsmdev/estoque-
 
 ## Funcionalidades
 
+- **Login com e-mail e senha** (token JWT da API), com criação do primeiro usuário pelo próprio painel
 - Resumo do estoque: total de produtos, itens, valor em estoque e alertas
 - Lista de produtos com busca por nome, filtro por categoria, filtro de estoque baixo e paginação
 - Cadastro e edição de produtos, com validação dos campos
@@ -33,6 +34,7 @@ python -m http.server 5500
 ```
 
 3. Acesse **http://127.0.0.1:5500** e confira o selo verde **API conectada** no topo.
+4. Faça login (ou crie o primeiro usuário, veja abaixo).
 
 Se a API estiver em outro endereço, clique em **Configurar API** e informe a URL.
 
@@ -51,21 +53,42 @@ app.add_middleware(
 )
 ```
 
+## Login
+
+O painel só mostra o estoque depois do login.
+
+- **Primeira vez (API sem nenhum usuário):** a janela aparece como **Criar primeiro usuário**. Preencha nome, e-mail e senha (8 ou mais caracteres) duas vezes e clique em **Criar e entrar**: o painel cadastra e já entra.
+- **Depois disso:** a janela aparece como **Entrar**, só com e-mail e senha.
+- **No topo** aparece "Olá, (seu nome)" e o botão **Sair**.
+- **Recarregar a página** mantém você logado (o token fica no `sessionStorage`, que é apagado quando você fecha a aba; nunca vai para o `localStorage`).
+- **Login expirado ou inválido:** o painel limpa a tela, avisa "Sessão expirada. Entre novamente." e abre o login de novo.
+- A janela de login não fecha com Esc. Se precisar trocar o endereço da API ou ir para o modo demo, use o botão **Configurar API** dentro dela.
+
+Para cadastrar outras pessoas, use `POST /auth/registro` no `/docs` da API já logado (botão **Authorize**).
+
 ## Modo demonstração
 
 Se a API não for encontrada, aparece o aviso amarelo e o painel passa a usar dados de exemplo salvos no `localStorage` do navegador. Nada é enviado para a internet. Clique em **Tentar conectar de novo** quando a API estiver ligada.
+
+O modo demo também pede login, com um usuário fixo de exemplo:
+
+| E-mail | Senha |
+| :-- | :-- |
+| `demo@painel.com` | `demo1234` |
+
+Esses dados aparecem na própria janela de login. No modo demo não dá para criar usuários.
 
 ## Estrutura
 
 ```
 index.html       # página e janelas (dialogs)
 css/style.css    # visual (tema escuro, responsivo)
-js/app.js        # lógica: API, modo demo, tabela, formulários
+js/app.js        # lógica: login, API, modo demo, tabela, formulários
 ```
 
 ## Próximos passos
 
-- [ ] Login (depois de adicionar JWT na API)
+- [x] Login (JWT na API)
 - [ ] Gráfico de estoque por categoria
 - [ ] Exportar a lista para CSV
 

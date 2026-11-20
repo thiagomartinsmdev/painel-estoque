@@ -19,6 +19,10 @@
   <div class="conn">
     <span class="pill" id="status" role="status"><i class="dot"></i><span id="status-text">Conectando…</span></span>
     <button class="btn ghost" id="btn-config" type="button">Configurar API</button>
+    <div class="user" id="user-box" hidden>
+      <span>Olá, <b id="user-nome"></b></span>
+      <button class="btn ghost small" id="btn-sair" type="button">Sair</button>
+    </div>
   </div>
 </header>
 
@@ -101,6 +105,23 @@
       <button class="btn ghost" type="button" data-close>Cancelar</button>
       <button class="btn ghost" type="button" id="c-demo">Usar modo demo</button>
       <button class="btn primary" type="submit">Salvar e conectar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-auth" aria-labelledby="dlg-auth-titulo" aria-describedby="auth-info">
+  <form id="form-auth" novalidate>
+    <h2 id="dlg-auth-titulo">Entrar</h2>
+    <p class="muted" id="auth-info">Entre com seu e-mail e senha para acessar o estoque.</p>
+    <label class="field" id="campo-nome" hidden><span class="mono">Nome</span><input id="a-nome" type="text" maxlength="80" autocomplete="name"></label>
+    <label class="field"><span class="mono">E-mail</span><input id="a-email" type="email" maxlength="120" autocomplete="username" required></label>
+    <label class="field"><span class="mono">Senha</span><input id="a-senha" type="password" maxlength="128" autocomplete="current-password" required></label>
+    <label class="field" id="campo-senha2" hidden><span class="mono">Repita a senha</span><input id="a-senha2" type="password" maxlength="128" autocomplete="new-password"></label>
+    <label class="check"><input id="a-mostrar" type="checkbox"><span>Mostrar senha</span></label>
+    <p class="form-error" id="erro-auth" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button class="btn ghost" type="button" id="a-config">Configurar API</button>
+      <button class="btn primary" type="submit" id="a-enviar">Entrar</button>
     </div>
   </form>
 </dialog>
