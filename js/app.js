@@ -7,7 +7,14 @@
   const KEY_URL = 'painel-estoque:url';
   const KEY_DEMO = 'painel-estoque:demo';
   const KEY_FORCE_DEMO = 'painel-estoque:forcedemo';
+  const KEY_TOKEN = 'painel-estoque:token';   // fica SÓ no sessionStorage
   const DEFAULT_URL = 'http://127.0.0.1:8000';
+
+  // Credenciais fixas do modo demonstração (não existe servidor no demo).
+  const DEMO_EMAIL = 'demo@painel.com';
+  const DEMO_SENHA = 'demo1234';
+  const DEMO_TOKEN = 'demo-token';
+  const MSG_SESSAO = 'Sessão expirada. Entre novamente.';
 
   const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -15,6 +22,13 @@
   class ApiError extends Error {
     constructor(message, status) { super(message); this.status = status; }
   }
+
+  /* ---------- Token (sessionStorage: some ao fechar a aba) ---------- */
+  const token = {
+    get() { try { return sessionStorage.getItem(KEY_TOKEN); } catch { return null; } },
+    set(v) { try { sessionStorage.setItem(KEY_TOKEN, v); } catch { /* ignora */ } },
+    limpar() { try { sessionStorage.removeItem(KEY_TOKEN); } catch { /* ignora */ } },
+  };
 
   /* ---------- Mensagens de erro da API (FastAPI) ---------- */
   function mensagem(data, status) {
@@ -29,17 +43,26 @@
   }
 
   /* ---------- Provedor 1: API real ---------- */
-  function apiProvider(base) {
-    const req = async (path, { method = 'GET', body } = {}) => {
+  function apiProvider(base, getToken, onUnauthorized) {
+    // auth = false nas rotas públicas (ping, status, login e registro).
+    const req = async (path, { method = 'GET', body, auth = true } = {}) => {
+      const headers = {};
+      if (body) headers['Content-Type'] = 'application/json';
+      const tk = auth ? getToken() : null;
+      if (tk) headers.Authorization = `Bearer ${tk}`;
       let res;
       try {
         res = await fetch(base + path, {
           method,
-          headers: body ? { 'Content-Type': 'application/json' } : {},
+          headers,
           body: body ? JSON.stringify(body) : undefined,
         });
       } catch {
         throw new ApiError('Não foi possível falar com a API. Ela está ligada?', 0);
+      }
+      if (res.status === 401 && auth) {
+        onUnauthorized();
+        throw new ApiError(MSG_SESSAO, 401);
       }
       if (res.status === 204) return null;
       const data = await res.json().catch(() => null);
@@ -56,7 +79,11 @@
     };
     return {
       demo: false,
-      ping: () => req('/'),
+      ping: () => req('/', { auth: false }),
+      status: () => req('/auth/status', { auth: false }),
+      login: (email, senha) => req('/auth/login', { method: 'POST', body: { email, senha }, auth: false }),
+      registrar: (d) => req('/auth/registro', { method: 'POST', body: d, auth: false }),
+      eu: () => req('/auth/eu'),
       listar: (f) => req('/produtos' + qs({
         busca: f.busca, categoria: f.categoria, baixo_estoque: f.baixo ? 'true' : '',
         skip: f.skip, limit: f.limit,
@@ -70,7 +97,7 @@
   }
 
   /* ---------- Provedor 2: modo demonstração (dados no navegador) ---------- */
-  function demoProvider() {
+  function demoProvider(getToken) {
     const seed = [
       ['Camiseta preta', 'roupas', '79.90', 10],
       ['Caneca branca', 'casa', '29.90', 4],
@@ -78,6 +105,7 @@
       ['Chaveiro do Galo', 'acessorios', '14.50', 3],
       ['Mochila', 'acessorios', '119.00', 8],
     ];
+    const usuarioDemo = { id: 1, nome: 'Visitante', email: DEMO_EMAIL };
     let db = null;
     try { db = JSON.parse(localStorage.getItem(KEY_DEMO)); } catch { db = null; }
     if (!db || !Array.isArray(db.items)) {
@@ -85,6 +113,10 @@
     }
     const save = () => { try { localStorage.setItem(KEY_DEMO, JSON.stringify(db)); } catch { /* ignora */ } };
     const clone = (p) => ({ ...p, preco: Number(p.preco).toFixed(2) });
+    // Imita a API: sem o token demo, responde 401.
+    const exigirLogin = () => {
+      if (getToken() !== DEMO_TOKEN) throw new ApiError(MSG_SESSAO, 401);
+    };
     const find = (id) => {
       const p = db.items.find((x) => x.id === id);
       if (!p) throw new ApiError('Produto não encontrado.', 404);
@@ -98,7 +130,19 @@
     return {
       demo: true,
       ping: async () => ({ mensagem: 'demo' }),
+      status: async () => ({ tem_usuarios: true }),
+      login: async (email, senha) => {
+        if (String(email).trim().toLowerCase() !== DEMO_EMAIL || senha !== DEMO_SENHA) {
+          throw new ApiError('E-mail ou senha incorretos.', 401);
+        }
+        return { access_token: DEMO_TOKEN, token_type: 'bearer', usuario: { ...usuarioDemo } };
+      },
+      registrar: async () => {
+        throw new ApiError(`No modo demonstração não dá para criar usuários. Entre com ${DEMO_EMAIL} e a senha ${DEMO_SENHA}.`, 403);
+      },
+      eu: async () => { exigirLogin(); return { ...usuarioDemo }; },
       listar: async (f) => {
+        exigirLogin();
         let r = db.items.slice().sort((a, b) => a.id - b.id);
         if (f.categoria) r = r.filter((p) => p.categoria === f.categoria);
         if (f.busca) r = r.filter((p) => p.nome.toLowerCase().includes(f.busca.toLowerCase()));
@@ -106,6 +150,7 @@
         return r.slice(f.skip, f.skip + f.limit).map(clone);
       },
       resumo: async () => {
+        exigirLogin();
         const itens = db.items.reduce((s, p) => s + p.quantidade, 0);
         const valor = db.items.reduce((s, p) => s + Number(p.preco) * p.quantidade, 0);
         return {
@@ -116,17 +161,20 @@
         };
       },
       criar: async (d) => {
+        exigirLogin();
         validar(d, false);
         const p = { id: db.next++, nome: d.nome.trim(), categoria: (d.categoria || 'geral').trim() || 'geral', preco: Number(d.preco).toFixed(2), quantidade: d.quantidade };
         db.items.push(p); save(); return clone(p);
       },
       atualizar: async (id, d) => {
+        exigirLogin();
         const p = find(id); validar(d, true);
         Object.assign(p, d, d.nome !== undefined ? { nome: d.nome.trim() } : {});
         save(); return clone(p);
       },
-      apagar: async (id) => { find(id); db.items = db.items.filter((p) => p.id !== id); save(); return null; },
+      apagar: async (id) => { exigirLogin(); find(id); db.items = db.items.filter((p) => p.id !== id); save(); return null; },
       ajustar: async (id, q) => {
+        exigirLogin();
         const p = find(id);
         if (p.quantidade + q < 0) throw new ApiError(`Estoque insuficiente: há ${p.quantidade} unidade(s) e a saída é de ${Math.abs(q)}.`, 400);
         p.quantidade += q; save(); return clone(p);
@@ -136,6 +184,7 @@
 
   /* ---------- Estado e utilidades de interface ---------- */
   let api = null;
+  let usuario = null;        // usuário logado (ou null)
   let hasNext = false;
   const st = { page: 0, busca: '', categoria: '', baixo: false };
 
@@ -156,28 +205,176 @@
   const mostrarErro = (id, texto) => { const e = $(id); e.textContent = texto; e.hidden = false; };
   const limparErro = (id) => { const e = $(id); e.textContent = ''; e.hidden = true; };
 
+  /* ---------- Sessão (login) ---------- */
+  let checandoSessao = false;   // true enquanto valida o token salvo (sem toast)
+
+  function mostrarUsuario() {
+    $('#user-nome').textContent = usuario ? usuario.nome : '';
+    $('#user-box').hidden = !usuario;
+  }
+
+  // Apaga os dados da tela (usado ao sair ou quando a sessão expira).
+  function limparTela() {
+    ['#sum-total', '#sum-itens', '#sum-valor', '#sum-baixo'].forEach((id) => { $(id).textContent = '—'; });
+    $('#tbody').replaceChildren();
+    $('#f-categoria').replaceChildren(new Option('Todas', ''));
+    $('#lista-categorias').replaceChildren();
+    $('#page-info').textContent = 'Página 1';
+    $('#btn-prev').disabled = true;
+    $('#btn-next').disabled = true;
+    st.page = 0;
+  }
+
+  function limparSessao() {
+    token.limpar();
+    usuario = null;
+    mostrarUsuario();
+    limparTela();
+    // Fecha qualquer janela aberta (menos a de login).
+    document.querySelectorAll('dialog[open]').forEach((d) => { if (d.id !== 'dlg-auth') d.close(); });
+  }
+
+  // Chamado pelo provedor da API quando chega um 401 (token inválido ou expirado).
+  function sessaoExpirada() {
+    if (checandoSessao) { token.limpar(); return; }
+    const estavaLogado = Boolean(token.get() || usuario);
+    limparSessao();
+    if (estavaLogado) toast(MSG_SESSAO, 'err');   // evita vários avisos seguidos
+    abrirAuth();
+  }
+
+  async function iniciarSessao() {
+    if (!token.get()) return abrirAuth();
+    checandoSessao = true;
+    try {
+      usuario = await api.eu();
+    } catch {
+      usuario = null;
+      token.limpar();   // token inválido/expirado (ou de outro modo): pede login
+    } finally {
+      checandoSessao = false;
+    }
+    mostrarUsuario();
+    if (!usuario) return abrirAuth();
+    $('#dlg-auth').close();
+    return refresh();
+  }
+
+  /* ---------- Janela de login / primeiro usuário ---------- */
+  let modoAuth = 'entrar';      // 'entrar' ou 'criar'
+  let abrindoAuth = false;      // trava contra chamadas simultâneas
+
+  function configurarAuth(modo) {
+    modoAuth = modo;
+    const criar = modo === 'criar';
+    $('#dlg-auth-titulo').textContent = criar ? 'Criar primeiro usuário' : 'Entrar';
+    let info;
+    if (api && api.demo) info = `Modo demonstração: entre com o e-mail ${DEMO_EMAIL} e a senha ${DEMO_SENHA}.`;
+    else if (criar) info = 'Ainda não há usuários. Crie o primeiro para começar (senha com 8 ou mais caracteres).';
+    else info = 'Entre com seu e-mail e senha para acessar o estoque.';
+    $('#auth-info').textContent = info;
+    $('#campo-nome').hidden = !criar;
+    $('#campo-senha2').hidden = !criar;
+    $('#a-senha').autocomplete = criar ? 'new-password' : 'current-password';
+    $('#a-enviar').textContent = criar ? 'Criar e entrar' : 'Entrar';
+  }
+
+  async function abrirAuth() {
+    if (abrindoAuth) return;
+    abrindoAuth = true;
+    const dlg = $('#dlg-auth');
+    limparErro('#erro-auth');
+    try {
+      let modo = 'entrar';
+      try {
+        const s = await api.status();
+        modo = s.tem_usuarios ? 'entrar' : 'criar';
+      } catch (e) {
+        mostrarErro('#erro-auth', e.message);
+      }
+      configurarAuth(modo);
+      if (!dlg.open) dlg.showModal();
+      (modo === 'criar' ? $('#a-nome') : $('#a-email')).focus();
+    } finally {
+      abrindoAuth = false;
+    }
+  }
+
+  function limparSenhas() {
+    $('#a-senha').value = '';
+    $('#a-senha2').value = '';
+    $('#a-mostrar').checked = false;
+    $('#a-senha').type = 'password';
+    $('#a-senha2').type = 'password';
+  }
+
+  async function enviarAuth(ev) {
+    ev.preventDefault();
+    limparErro('#erro-auth');
+    const criar = modoAuth === 'criar';
+    const nome = $('#a-nome').value.trim();
+    const email = $('#a-email').value.trim();
+    const senha = $('#a-senha').value;
+    if (criar && nome.length < 2) return mostrarErro('#erro-auth', 'Informe seu nome (mínimo 2 letras).');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return mostrarErro('#erro-auth', 'Informe um e-mail válido.');
+    if (!senha) return mostrarErro('#erro-auth', 'Informe a senha.');
+    if (criar && senha.length < 8) return mostrarErro('#erro-auth', 'A senha precisa ter pelo menos 8 caracteres.');
+    if (criar && senha !== $('#a-senha2').value) return mostrarErro('#erro-auth', 'As senhas não são iguais.');
+
+    const btn = $('#a-enviar');
+    btn.disabled = true;
+    try {
+      if (criar) await api.registrar({ nome, email, senha });
+      const r = await api.login(email, senha);
+      token.set(r.access_token);
+      usuario = r.usuario;
+      mostrarUsuario();
+      limparSenhas();
+      $('#dlg-auth').close();
+      toast(`Bem-vindo, ${usuario.nome}.`);
+      await refresh();
+    } catch (e) {
+      if (criar && e.status === 401) {
+        // Alguém criou o primeiro usuário antes: volta para o modo "Entrar".
+        await abrirAuth();
+        mostrarErro('#erro-auth', 'Já existe um usuário cadastrado. Entre com seu e-mail e senha.');
+      } else {
+        mostrarErro('#erro-auth', e.message);
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function sair() {
+    limparSessao();
+    toast('Você saiu.');
+    abrirAuth();
+  }
+
   /* ---------- Conexão ---------- */
   async function connect() {
     setStatus('', 'Conectando…');
     const url = (localStorage.getItem(KEY_URL) || DEFAULT_URL).replace(/\/+$/, '');
     if (localStorage.getItem(KEY_FORCE_DEMO) !== '1') {
       try {
-        const a = apiProvider(url);
+        const a = apiProvider(url, token.get, sessaoExpirada);
         await a.ping();
         api = a;
         setStatus('ok', `API conectada · ${url.replace(/^https?:\/\//, '')}`);
         $('#banner').hidden = true;
-        return refresh();
+        return iniciarSessao();
       } catch { /* cai no modo demo */ }
     }
-    api = demoProvider();
+    api = demoProvider(token.get);
     setStatus('demo', 'Modo demonstração');
     $('#banner').hidden = false;
-    return refresh();
+    return iniciarSessao();
   }
 
   /* ---------- Carregar e desenhar ---------- */
   async function refresh() {
+    if (!usuario) return;   // sem login, não busca nada
     try {
       const [lista, resumo, todos] = await Promise.all([
         api.listar({ busca: st.busca, categoria: st.categoria, baixo: st.baixo, skip: st.page * PAGE, limit: PAGE + 1 }),
@@ -193,6 +390,9 @@
       $('#btn-prev').disabled = st.page === 0;
       $('#btn-next').disabled = !hasNext;
     } catch (e) {
+      // 401: a sessão já foi tratada (login aberto); a API está no ar, então
+      // o selo de conexão NÃO muda para "API sem resposta".
+      if (e.status === 401) return;
       toast(e.message, 'err');
       if (!api.demo) setStatus('off', 'API sem resposta');
     }
@@ -292,7 +492,7 @@
       $('#dlg-produto').close();
       toast(id ? 'Produto atualizado.' : 'Produto cadastrado.');
       await refresh();
-    } catch (e) { mostrarErro('#erro-produto', e.message); }
+    } catch (e) { if (e.status !== 401) mostrarErro('#erro-produto', e.message); }
   }
 
   /* ---------- Ajuste de estoque ---------- */
@@ -314,7 +514,7 @@
       $('#dlg-estoque').close();
       toast(q > 0 ? `Entrada de ${q} unidade(s).` : `Saída de ${Math.abs(q)} unidade(s).`);
       await refresh();
-    } catch (e) { mostrarErro('#erro-estoque', e.message); }
+    } catch (e) { if (e.status !== 401) mostrarErro('#erro-estoque', e.message); }
   }
 
   /* ---------- Apagar ---------- */
@@ -330,13 +530,19 @@
       $('#dlg-apagar').close();
       toast('Produto apagado.');
       await refresh();
-    } catch (e) { $('#dlg-apagar').close(); toast(e.message, 'err'); }
+    } catch (e) { $('#dlg-apagar').close(); if (e.status !== 401) toast(e.message, 'err'); }
   }
 
   /* ---------- Configuração da API ---------- */
   function abrirConfig() {
     $('#c-url').value = localStorage.getItem(KEY_URL) || DEFAULT_URL;
     $('#dlg-config').showModal();
+  }
+
+  // Trocar de API (ou de/para o demo) invalida o login atual.
+  function reconectar() {
+    limparSessao();
+    connect();
   }
 
   /* ---------- Eventos ---------- */
@@ -351,22 +557,35 @@
   $('#btn-next').addEventListener('click', () => { if (hasNext) { st.page += 1; refresh(); } });
   $('#btn-novo').addEventListener('click', () => abrirProduto(null));
   $('#btn-config').addEventListener('click', abrirConfig);
-  $('#btn-retry').addEventListener('click', () => { localStorage.removeItem(KEY_FORCE_DEMO); connect(); });
+  $('#btn-retry').addEventListener('click', () => { localStorage.removeItem(KEY_FORCE_DEMO); reconectar(); });
+  $('#btn-sair').addEventListener('click', sair);
   $('#form-produto').addEventListener('submit', salvarProduto);
   $('#form-estoque').addEventListener('submit', aplicarEstoque);
   $('#form-apagar').addEventListener('submit', confirmarApagar);
+  $('#form-auth').addEventListener('submit', enviarAuth);
+  $('#a-config').addEventListener('click', abrirConfig);
+  $('#a-mostrar').addEventListener('change', (e) => {
+    const tipo = e.target.checked ? 'text' : 'password';
+    $('#a-senha').type = tipo;
+    $('#a-senha2').type = tipo;
+  });
+  // A janela de login não fecha com Esc enquanto não houver usuário logado.
+  $('#dlg-auth').addEventListener('cancel', (e) => e.preventDefault());
+  $('#dlg-auth').addEventListener('close', () => {
+    if (!usuario) setTimeout(() => { if (!usuario && !$('#dlg-auth').open) $('#dlg-auth').showModal(); }, 0);
+  });
   $('#form-config').addEventListener('submit', (ev) => {
     ev.preventDefault();
     const url = $('#c-url').value.trim();
     if (url) localStorage.setItem(KEY_URL, url);
     localStorage.removeItem(KEY_FORCE_DEMO);
     $('#dlg-config').close();
-    connect();
+    reconectar();
   });
   $('#c-demo').addEventListener('click', () => {
     localStorage.setItem(KEY_FORCE_DEMO, '1');
     $('#dlg-config').close();
-    connect();
+    reconectar();
   });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
 
