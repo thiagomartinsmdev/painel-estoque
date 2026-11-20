@@ -13,6 +13,7 @@ Painel web para a [API de Estoque](https://github.com/thiagomartinsmdev/estoque-
 - Cadastro e edição de produtos, com validação dos campos
 - Entrada e saída de estoque (a API bloqueia estoque negativo e o painel mostra o motivo)
 - Exclusão com confirmação
+- **Exportar para CSV**: baixa a lista de produtos (com a busca e os filtros atuais) num arquivo que abre no Excel
 - **Modo demonstração:** sem a API, o painel usa dados de exemplo guardados no navegador, então dá para testar online
 - Layout responsivo (celular e computador), acessível e com tema escuro
 
@@ -79,6 +80,18 @@ Logo abaixo do resumo, o painel mostra um gráfico de barras com **todas as cate
 
 Feito sem bibliotecas: as barras são elementos HTML com largura proporcional ao valor (CSS), e o texto é colocado com `textContent`.
 
+## Exportar para CSV
+
+O botão **Exportar CSV** (ao lado de **+ Novo produto**) baixa um arquivo `estoque-AAAA-MM-DD.csv` com os produtos.
+
+- Respeita a **busca e os filtros** da tela (categoria e "só estoque baixo") e pega **todas as páginas**, não só a que está aparecendo.
+- Colunas: ID, Produto, Categoria, Preço (R$), Quantidade, Valor em estoque (R$) e Estoque baixo (Sim/Não).
+- Feito para abrir direto no **Excel em português**: separador `;`, vírgula nos decimais (`79,90`) e acentos corretos (o arquivo é UTF-8 com BOM).
+- Segurança: nomes que começam com `=`, `+`, `-` ou `@` ganham um `'` na frente, para o Excel não executar como fórmula.
+- Funciona também no modo demo.
+
+Como abrir: dê dois cliques no arquivo baixado (pasta **Downloads**) e ele abre no Excel. No Google Planilhas: **Arquivo → Importar → Upload** e escolha o separador **ponto e vírgula**.
+
 ## Modo demonstração
 
 Se a API não for encontrada, aparece o aviso amarelo e o painel passa a usar dados de exemplo salvos no `localStorage` do navegador. Nada é enviado para a internet. Clique em **Tentar conectar de novo** quando a API estiver ligada.
@@ -103,7 +116,7 @@ js/app.js        # lógica: login, API, modo demo, tabela, formulários
 
 - [x] Login (JWT na API)
 - [x] Gráfico de estoque por categoria
-- [ ] Exportar a lista para CSV
+- [x] Exportar a lista para CSV
 
 ---
 
